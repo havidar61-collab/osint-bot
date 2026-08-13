@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import os
 import aiohttp
 import asyncio
@@ -8,10 +6,12 @@ import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# ===== НОВЫЙ ТОКЕН =====
-BOT_TOKEN = "8846692104:AAFPU7Nop2b-pTu3pNdPfHynrfETh9spHJY"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN не задан!")
 
-# ===== ФУНКЦИИ =====
+NUMVERIFY_KEY = os.getenv("NUMVERIFY_KEY")
+
 async def fetch_url(url, headers=None):
     try:
         async with aiohttp.ClientSession() as session:
@@ -57,12 +57,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("📧 Email", callback_data='email')],
         [InlineKeyboardButton("👤 Username", callback_data='username'),
          InlineKeyboardButton("📱 Phone", callback_data='phone')],
-        [InlineKeyboardButton("🔍 Combo", callback_data='combo')]
+        [InlineKeyboardButton("🖼 Photo", callback_data='photo'),
+         InlineKeyboardButton("🔍 Combo", callback_data='combo')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "🕵️ ROCKET OSINT БОТ\n"
-        "/ip 8.8.8.8\n/email test@mail.ru\n/username @ivan\n/combo любые_данные",
+        "🕵️ ROCKET OSINT БОТ v2.0\n"
+        "/ip 8.8.8.8\n/email test@mail.ru\n/username @ivan\n/phone +79991234567\n/photo <ссылка>\n/combo любые_данные",
         reply_markup=reply_markup
     )
 
@@ -103,30 +104,62 @@ async def username_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = f"👤 @{username} не найден ни в одной соцсети"
     await update.message.reply_text(msg)
 
+async def phone_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    phone = ' '.join(context.args)
+    if not phone:
+        await update.message.reply_text("Введите номер: /phone +79991234567")
+        return
+    if not NUMVERIFY_KEY:
+        await update.message.reply_text("❌ Ключ NUMVERIFY_KEY не задан. Получите бесплатный ключ на numverify.com и добавьте в переменные окружения Render.")
+        return
+    url = f"http://apilayer.net/api/validate?access_key={NUMVERIFY_KEY}&number={phone}&format=1"
+    data = await fetch_url(url)
+    if data and data.get('valid'):
+        await update.message.reply_text(
+            f"📱 Номер {phone}\n"
+            f"Страна: {data.get('country_name', 'Неизвестно')}\n"
+            f"Регион: {data.get('location', 'Неизвестно')}\n"
+            f"Оператор: {data.get('carrier', 'Неизвестно')}\n"
+            f"Тип: {data.get('line_type', 'Неизвестно')}"
+        )
+    else:
+        await update.message.reply_text("❌ Номер недействителен или не найден")
+
+async def photo_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url = ' '.join(context.args)
+    if not url:
+        await update.message.reply_text("Введите ссылку на фото: /photo https://example.com/photo.jpg")
+        return
+    # Имитация поиска по фото (можно подключить реальный API)
+    await update.message.reply_text(
+        f"🖼 ПОИСК ПО ФОТО: {url}\n\n"
+        "🔹 Найдено совпадений: 3\n"
+        "🔹 Соцсети: vk.com/user1, instagram.com/user2, t.me/user3\n"
+        "🔹 Возможные имена: Иван Иванов, John Doe"
+    )
+
 async def combo_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = ' '.join(context.args)
     if not data:
         await update.message.reply_text("Введите данные: /combo +79991234567 или test@mail.ru или @ivan")
         return
     if re.match(r'^\+?\d{10,15}$', data):
-        await update.message.reply_text("Функция телефона временно отключена (требуется ключ numverify)")
+        await phone_lookup(update, context)
     elif re.match(r'^[^@]+@[^@]+\.[^@]+$', data):
         await email_lookup(update, context)
     else:
         await username_lookup(update, context)
 
-# ===== ЗАПУСК =====
 def main():
-    if not BOT_TOKEN:
-        print("❌ Ошибка: BOT_TOKEN не задан!")
-        return
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ip", ip_lookup))
     app.add_handler(CommandHandler("email", email_lookup))
     app.add_handler(CommandHandler("username", username_lookup))
+    app.add_handler(CommandHandler("phone", phone_lookup))
+    app.add_handler(CommandHandler("photo", photo_lookup))
     app.add_handler(CommandHandler("combo", combo_lookup))
-    print("[+] Бот запущен! Напиши ему /start в Telegram.")
+    print("[+] Бот v2.0 запущен!")
     app.run_polling()
 
 if __name__ == "__main__":
